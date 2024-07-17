@@ -304,12 +304,13 @@ class MultimodalOrientedPushOracle(OrientedPushOracle):
 @click.command()
 @click.option("-o", "--output", required=False)
 @click.option("-hz", "--control_hz", default=10, type=int)
-def main(output, control_hz):
+def environment_test(output, control_hz):
     env = gym.make("BlockPushMultimodal-v0", control_frequency=control_hz)  # default valueと一緒だけど......
     env.reset()
     oracle = MultimodalOrientedPushOracle(env)
 
-    # replay_buffer = ReplayBuffer.create_from_path(output, mode="a")
+    # create replay buffer in read-write mode
+    replay_buffer = ReplayBuffer.create_from_path(output, mode="a")
 
     # キーアクセスのテスト
     # 　関節角度はjointstateに入っている！
@@ -369,7 +370,81 @@ def main(output, control_hz):
     env.close()
 
 
+@click.command()
+@click.option("-o", "--output", required=False)
+@click.option("-hz", "--control_hz", default=10, type=int)
+@click.option("-epi", "--episodes", default=350, type=int)
+def main(output, control_hz, episodes):
+    env: gym.Env = gym.make("BlockPushMultimodal-v0", control_frequency=control_hz)  # default valueと一緒だけど......
+    oracle = MultimodalOrientedPushOracle(env)
+    replay_buffer = ReplayBuffer.create_empty_zarr()
+
+    for _ in range(episodes):
+        episode = list()
+
+        seed = replay_buffer.n_episodes
+        env.seed(seed)
+        env.reset()
+        done = False
+
+        while not done:
+            obs_raw: dict = env.get_pybullet_state()
+            _robot_data = XarmState.serialize(obs_raw["robots"][0])
+            angles = tuple(_robot_data.get("joint_state")[i][0] for i in range(1, 7))  # 各関節の角度を取り出すコード
+            objects = [ObjState.serialize(obs_raw["objects"][i]) for i in range(2)]
+            targets = [ObjState.serialize(obs_raw["targets"][i]) for i in range(2)]
+            effector = ObjState.serialize(obs_raw["robot_end_effectors"][0])
+
+            def _get_theta_from_quat(quat):
+                """
+                getBasePositionAndOrientation returns the position list of 3 floats and orientation as list of 4 floats in [x,y,z,w] order.
+                Use getEulerFromQuaternion to convert the quaternion to Euler if needed.
+                np.arctan2(2 * (quat[3] * quat[2] + quat[0] * quat[1]), 1 - 2 * (quat[1] ** 2 + quat[2] ** 2))
+                """
+                return env.pybullet_client.getEulerFromQuaternion(quat)[2]
+
+            data = {
+                "block_translation": np.array(objects[0]["base_pose"][0], dtype=np.float32)[:2],
+                "target_translation": np.array(targets[0]["base_pose"][0], dtype=np.float32)[:2],
+                "block2_translation": np.array(objects[1]["base_pose"][0], dtype=np.float32)[:2],
+                "target2_translation": np.array(targets[1]["base_pose"][0], dtype=np.float32)[:2],
+                "effector_target_translation": np.array(effector["base_pose"][0], dtype=np.float32)[:2],
+                "block_orientation": np.array(
+                    _get_theta_from_quat(objects[0]["base_pose"][1]), dtype=np.float32, ndmin=1
+                ),
+                "target_orientation": np.array(
+                    _get_theta_from_quat(targets[0]["base_pose"][1]), dtype=np.float32, ndmin=1
+                ),
+                "block2_orientation": np.array(
+                    _get_theta_from_quat(objects[1]["base_pose"][1]), dtype=np.float32, ndmin=1
+                ),
+                "target2_orientation": np.array(
+                    _get_theta_from_quat(targets[1]["base_pose"][1]), dtype=np.float32, ndmin=1
+                ),
+            }
+
+            action = oracle._action(data)
+            next_state, reward, done, info = env.step(action)
+            print(f"next_state:{next_state}")
+
+            # ログデータの追加
+            # data["angles"] = np.array(angles, dtype=np.float32)
+
+            log = {}
+            log["obs"] = np.concatenate([value for value in data.values()], axis=0)
+            log["action"] = np.array(action, dtype=np.float32)
+            episode.append(log)
+
+        data_dict = {}
+        for key in episode[0].keys():
+            data_dict[key] = np.stack([log[key] for log in episode])
+        replay_buffer.add_episode(data_dict, compressors="disk")
+
+    replay_buffer.save_to_path(output)
+
+
 if __name__ == "__main__":
+    # environment_test()
     main()
 
 
