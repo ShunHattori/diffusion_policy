@@ -2,6 +2,7 @@ import gym
 
 """Oracle for multimodal pushing task."""
 import random
+from collections import OrderedDict
 
 import click
 import numpy as np
@@ -384,56 +385,54 @@ def main(output, control_hz, episodes):
 
         seed = replay_buffer.n_episodes
         env.seed(seed)
-        env.reset()
+        obs = env.reset()
         done = False
 
         while not done:
-            obs_raw: dict = env.get_pybullet_state()
-            _robot_data = XarmState.serialize(obs_raw["robots"][0])
-            angles = tuple(_robot_data.get("joint_state")[i][0] for i in range(1, 7))  # 各関節の角度を取り出すコード
-            objects = [ObjState.serialize(obs_raw["objects"][i]) for i in range(2)]
-            targets = [ObjState.serialize(obs_raw["targets"][i]) for i in range(2)]
-            effector = ObjState.serialize(obs_raw["robot_end_effectors"][0])
+            # obs_raw: dict = env.get_pybullet_state()
+            # _robot_data = XarmState.serialize(obs_raw["robots"][0])
+            # angles = tuple(_robot_data.get("joint_state")[i][0] for i in range(1, 7))  # 各関節の角度を取り出すコード
+            # objects = [ObjState.serialize(obs_raw["objects"][i]) for i in range(2)]
+            # targets = [ObjState.serialize(obs_raw["targets"][i]) for i in range(2)]
+            # effector = ObjState.serialize(obs_raw["robot_end_effectors"][0])
 
-            def _get_theta_from_quat(quat):
-                """
-                getBasePositionAndOrientation returns the position list of 3 floats and orientation as list of 4 floats in [x,y,z,w] order.
-                Use getEulerFromQuaternion to convert the quaternion to Euler if needed.
-                np.arctan2(2 * (quat[3] * quat[2] + quat[0] * quat[1]), 1 - 2 * (quat[1] ** 2 + quat[2] ** 2))
-                """
-                return env.pybullet_client.getEulerFromQuaternion(quat)[2]
+            # def _get_theta_from_quat(quat):
+            #     """
+            #     getBasePositionAndOrientation returns the position list of 3 floats and orientation as list of 4 floats in [x,y,z,w] order.
+            #     Use getEulerFromQuaternion to convert the quaternion to Euler if needed.
+            #     np.arctan2(2 * (quat[3] * quat[2] + quat[0] * quat[1]), 1 - 2 * (quat[1] ** 2 + quat[2] ** 2))
+            #     """
+            #     return env.pybullet_client.getEulerFromQuaternion(quat)[2]
 
-            data = {
-                "block_translation": np.array(objects[0]["base_pose"][0], dtype=np.float32)[:2],
-                "target_translation": np.array(targets[0]["base_pose"][0], dtype=np.float32)[:2],
-                "block2_translation": np.array(objects[1]["base_pose"][0], dtype=np.float32)[:2],
-                "target2_translation": np.array(targets[1]["base_pose"][0], dtype=np.float32)[:2],
-                "effector_target_translation": np.array(effector["base_pose"][0], dtype=np.float32)[:2],
-                "block_orientation": np.array(
-                    _get_theta_from_quat(objects[0]["base_pose"][1]), dtype=np.float32, ndmin=1
-                ),
-                "target_orientation": np.array(
-                    _get_theta_from_quat(targets[0]["base_pose"][1]), dtype=np.float32, ndmin=1
-                ),
-                "block2_orientation": np.array(
-                    _get_theta_from_quat(objects[1]["base_pose"][1]), dtype=np.float32, ndmin=1
-                ),
-                "target2_orientation": np.array(
-                    _get_theta_from_quat(targets[1]["base_pose"][1]), dtype=np.float32, ndmin=1
-                ),
-            }
+            # data = {
+            #     "block_translation": np.array(objects[0]["base_pose"][0], dtype=np.float32)[:2],
+            #     "target_translation": np.array(targets[0]["base_pose"][0], dtype=np.float32)[:2],
+            #     "block2_translation": np.array(objects[1]["base_pose"][0], dtype=np.float32)[:2],
+            #     "target2_translation": np.array(targets[1]["base_pose"][0], dtype=np.float32)[:2],
+            #     "effector_target_translation": np.array(effector["base_pose"][0], dtype=np.float32)[:2],
+            #     "block_orientation": np.array(
+            #         _get_theta_from_quat(objects[0]["base_pose"][1]), dtype=np.float32, ndmin=1
+            #     ),
+            #     "target_orientation": np.array(
+            #         _get_theta_from_quat(targets[0]["base_pose"][1]), dtype=np.float32, ndmin=1
+            #     ),
+            #     "block2_orientation": np.array(
+            #         _get_theta_from_quat(objects[1]["base_pose"][1]), dtype=np.float32, ndmin=1
+            #     ),
+            #     "target2_orientation": np.array(
+            #         _get_theta_from_quat(targets[1]["base_pose"][1]), dtype=np.float32, ndmin=1
+            #     ),
+            # }
 
-            action = oracle._action(data)
-            next_state, reward, done, info = env.step(action)
-            print(f"next_state:{next_state}")
-
-            # ログデータの追加
-            # data["angles"] = np.array(angles, dtype=np.float32)
+            action = oracle._action(obs)
+            obs, reward, done, info = env.step(action)
 
             log = {}
-            log["obs"] = np.concatenate([value for value in data.values()], axis=0)
+            log["obs"] = np.concatenate([np.array(value, dtype=np.float32) for value in obs.values()], axis=0)
             log["action"] = np.array(action, dtype=np.float32)
             episode.append(log)
+
+            # env.render()
 
         data_dict = {}
         for key in episode[0].keys():
@@ -457,5 +456,50 @@ targets: [ObjState(obj_id=4, base_pose=((0.515545715918793, 0.19738471220024115,
 
 objects: [ObjState(obj_id=6, base_pose=((-0.250143214970878, -1.015025627604685, 0.01898593514213643), (2.0078257082841014e-06, 3.002891735276099e-05, -0.37234862792174966, 0.9280929362833353)), base_vel=((-0.5712375338666893, -0.18043267598915377, 0.00010244986164296283), (0.0005534838244221237, -0.0008169307859330992, 13.991970272800861)), joint_info=(), joint_state=()), ObjState(obj_id=7, base_pose=((0.38256554189917197, -0.25575052767455014, 0.01898509382544836), (3.948674424398224e-05, 4.188560606201641e-05, 0.8868206021577709, 0.4621138563978811)), base_vel=((1.3370629943951002e-05, 1.4828832783820478e-05, 9.325932797506903e-05), (-0.0006745653269397214, 0.0009891855223804298, -0.00017738288578947203)), joint_info=(), joint_state=())]
 
+@classmethod
+def calc_unnormalized_state(cls, norm_state):
 
+    effector_target_translation = cls._unnormalize(
+        norm_state["effector_target_translation"],
+        EFFECTOR_TARGET_TRANSLATION_MIN,
+        EFFECTOR_TARGET_TRANSLATION_MAX,
+    )
+    # Note: normalized state does not include effector_translation state, this
+    # means this component will be missing (and is marked nan).
+    effector_translation = np.array([np.nan, np.nan], np.float32)
+
+    effector_target_to_block_translation = cls._unnormalize(
+        norm_state["effector_target_to_block_translation"],
+        EFFECTOR_TARGET_TO_BLOCK_TRANSLATION_MIN,
+        EFFECTOR_TARGET_TO_BLOCK_TRANSLATION_MAX,
+    )
+    block_translation = effector_target_to_block_translation + effector_target_translation
+    ori_cos_sin = cls._unnormalize(
+        norm_state["block_orientation_cos_sin"],
+        BLOCK_ORIENTATION_COS_SIN_MIN,
+        BLOCK_ORIENTATION_COS_SIN_MAX,
+    )
+    block_orientation = np.array([math.atan2(ori_cos_sin[1], ori_cos_sin[0])], np.float32)
+
+    effector_target_to_target_translation = cls._unnormalize(
+        norm_state["effector_target_to_target_translation"],
+        EFFECTOR_TARGET_TO_TARGET_TRANSLATION_MIN,
+        EFFECTOR_TARGET_TO_TARGET_TRANSLATION_MAX,
+    )
+    target_translation = effector_target_to_target_translation + effector_target_translation
+    ori_cos_sin = cls._unnormalize(
+        norm_state["target_orientation_cos_sin"],
+        TARGET_ORIENTATION_COS_SIN_MIN,
+        TARGET_ORIENTATION_COS_SIN_MAX,
+    )
+    target_orientation = np.array([math.atan2(ori_cos_sin[1], ori_cos_sin[0])], np.float32)
+
+    return collections.OrderedDict(
+        block_translation=block_translation,
+        block_orientation=block_orientation,
+        effector_translation=effector_translation,
+        effector_target_translation=effector_target_translation,
+        target_translation=target_translation,
+        target_orientation=target_orientation,
+    )
 """
