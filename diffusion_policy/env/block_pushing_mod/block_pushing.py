@@ -77,21 +77,23 @@ INITIAL_JOINT_POSITIONS = np.array(
         # 0.0006653351931553931,
         # 0.3987969742311386,
         # -4.063402065624296,
-        -0.73180657,
-        -0.99655245,
-        1.88592175,
-        -2.45983803,
-        -1.57006518,
-        0.83773653,
+        -0.97797246,
+        -1.02300298,
+        1.93564557,
+        -2.48278522,
+        -1.57042666,
+        0.59291186,
     ]
 )
 
-DEFAULT_CAMERA_POSE = (1.0, 0, 0.75)
-# DEFAULT_CAMERA_POSE = (1.0, 0, 0.1)
+DEFAULT_CAMERA_POSE = (1.0, 0, 0.75)  # 俯瞰
+# DEFAULT_CAMERA_POSE = (1.0, 0, 0.1)  # 正面覗き込み
+# DEFAULT_CAMERA_POSE = (0.4, 1.0, 0.1)  # 側面覗き込み
 DEFAULT_CAMERA_ORIENTATION = (np.pi / 4, np.pi, -np.pi / 2)
 # DEFAULT_CAMERA_ORIENTATION = (np.pi / 2.1, np.pi, -np.pi / 2)
-IMAGE_WIDTH = round(320 * 1.5)
-IMAGE_HEIGHT = round(240 * 1.5)
+# DEFAULT_CAMERA_ORIENTATION = (np.pi / 2.1, np.pi, 0)
+IMAGE_WIDTH = round(320 * 1)
+IMAGE_HEIGHT = round(240 * 1)
 CAMERA_INTRINSICS = (
     0.803 * IMAGE_WIDTH,  # fx
     0,
@@ -372,9 +374,7 @@ class BlockPush(gym.Env):
             self._pybullet_client.restoreState(self._saved_state)
 
             rotation = transform.Rotation.from_rotvec([0, math.pi, 0])
-            # rotation = transform.Rotation.from_rotvec([-math.pi / 2, 0, 0])  # 下に向くように調整済み
             translation = np.array([0.3, -0.4, self.effector_height])
-            translation = np.array([0.5, -0.3, self.effector_height])
             starting_pose = Pose3d(rotation=rotation, translation=translation)
             self._set_robot_target_effector_pose(starting_pose)
 

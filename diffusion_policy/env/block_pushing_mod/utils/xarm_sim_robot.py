@@ -26,7 +26,17 @@ XARM_URDF_PATH = "third_party/py/envs/assets/urdf/" "ur5.urdf"  # ur5に変更
 SUCTION_URDF_PATH = "third_party/py/envs/assets/suction/" "suction-head-long.urdf"
 CYLINDER_URDF_PATH = "third_party/py/envs/assets/suction/" "cylinder.urdf"
 CYLINDER_REAL_URDF_PATH = "third_party/py/envs/assets/suction/" "cylinder_real.urdf"
-HOME_JOINT_POSITIONS = np.deg2rad([0, -20, -80, 0, 100, -30])  # 呼び出し元で上書きされる
+# HOME_JOINT_POSITIONS = np.deg2rad([0, -20, -80, 0, 100, -30])  # 呼び出し元で上書きされる
+HOME_JOINT_POSITIONS = np.array(
+    [
+        -0.97797246,
+        -1.02300298,
+        1.93564557,
+        -2.48278522,
+        -1.57042666,
+        0.59291186,
+    ]
+)  # 呼び出し元で上書きされるが，初期値を設定しておく．
 
 
 class XArmSimRobot:
@@ -43,7 +53,7 @@ class XArmSimRobot:
         self.initial_joint_positions = initial_joint_positions
 
         if color == "default":
-            self.xarm = utils_pybullet.load_urdf(pybullet_client, XARM_URDF_PATH, [0, 0, 0])
+            self.xarm = utils_pybullet.load_urdf(pybullet_client, XARM_URDF_PATH, [-0.1, 0, 0])
         else:
             raise ValueError("Unrecognized xarm color %s" % color)
 

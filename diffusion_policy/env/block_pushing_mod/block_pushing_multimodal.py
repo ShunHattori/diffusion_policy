@@ -291,7 +291,9 @@ class BlockPushMultimodal(block_pushing.BlockPush):
             self._pybullet_client.restoreState(self._saved_state)
 
             rotation = transform.Rotation.from_rotvec([0, math.pi, 0])
-            translation = np.array([0.3, -0.4, block_pushing.EFFECTOR_HEIGHT])
+            translation = np.array(
+                [0.3, -0.4, block_pushing.EFFECTOR_HEIGHT + 0.0]
+            )  # 初期位置を上げることで，ブロックの初期化位置と干渉を避ける
             starting_pose = Pose3d(rotation=rotation, translation=translation)
             self._set_robot_target_effector_pose(starting_pose)
             self._reset_object_poses(workspace_center_x, workspace_center_y)
@@ -300,11 +302,12 @@ class BlockPushMultimodal(block_pushing.BlockPush):
         self._target_poses = [self._get_target_pose(idx) for idx in self._target_ids]
 
         if reset_poses:
-            self.step_simulation_to_stabilize()
+            self.step_simulation_to_stabilize()  # ここでブロックが飛んでいっている? なぜ? ロボットと干渉している？
 
         state = self._compute_state()
         self._previous_state = state
         self._event_manager.reset()
+
         return state
 
     def _get_target_pose(self, idx):

@@ -11,13 +11,10 @@ import numpy as np
 import pybullet  # pylint: disable=unused-import
 import pygame
 
-import diffusion_policy.env.block_pushing_mod.oracles.pushing_info as pushing_info_module
+import diffusion_policy.env.block_pushing.oracles.pushing_info as pushing_info_module
 from diffusion_policy.common.replay_buffer import ReplayBuffer
-from diffusion_policy.env.block_pushing_mod import block_pushing_multimodal
-from diffusion_policy.env.block_pushing_mod.utils.utils_pybullet import (
-    ObjState,
-    XarmState,
-)
+from diffusion_policy.env.block_pushing import block_pushing_multimodal
+from diffusion_policy.env.block_pushing.utils.utils_pybullet import ObjState, XarmState
 from diffusion_policy.env.pusht.pusht_keypoints_env import PushTKeypointsEnv
 
 
@@ -251,6 +248,7 @@ class MultimodalOrientedPushOracle(OrientedPushOracle):
         """Chooses block->target order for multimodal pushing."""
         # Define all possible ((first_block, first_target),
         # (second_block, second_target)).
+        # 初期化時のIDが固定ならば，blockとtargetの組み合わせは固定するべき．タスク設定がそうじゃない．マルチモーダルってそういうこと．
         possible_orders = [
             (("block", "target"), ("block2", "target2")),
             (("block", "target2"), ("block2", "target")),
@@ -296,7 +294,6 @@ class MultimodalOrientedPushOracle(OrientedPushOracle):
             data=_data, block=self._current_block, target=self._current_target
         )
 
-        # return policy_step.PolicyStep(action=np.asarray(xy_delta, dtype=np.float32))
         return xy_delta
 
 
@@ -329,7 +326,6 @@ def main(output, control_hz, episodes, max_steps, chunk_length):
                 print(
                     f"Max steps reached {(max_steps)}. Retrying with a new seed. ({replay_buffer.n_episodes + num_retry})"
                 )
-                done = True
                 break
 
             # demo_pusht.pyの作法に修正．記録する最初のアクションはreset()で取得したobsを利用する．そして最後にstep()を実行する．
@@ -340,72 +336,14 @@ def main(output, control_hz, episodes, max_steps, chunk_length):
 
             obs, reward, done, info = env.step(action)
             # env.render()
-        else:
-            obs_history = np.array(obs_history)
-            action_history = np.array(action_history)
-            episode = {"obs": obs_history, "action": action_history}
-            replay_buffer.add_episode(episode)
+
+        obs_history = np.array(obs_history)
+        action_history = np.array(action_history)
+        episode = {"obs": obs_history, "action": action_history}
+        replay_buffer.add_episode(episode)
 
     replay_buffer.save_to_path(output, chunk_length=chunk_length)
 
 
 if __name__ == "__main__":
     main()
-
-
-"""
-robots: [XarmState(obj_id=2, base_pose=((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0)), base_vel=((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)), joint_info=((0, 'world_joint', 4, -1, -1, 0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 'link_base', (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0), -1), (1, 'shoulder_pan_joint', 0, 7, 6, 1, 0.0, 0.0, -6.28318530718, 6.28318530718, 150.0, 3.15, 'shoulder_link', (0.0, 0.0, 1.0), (0.0, 0.0, 0.089159), (0.0, 0.0, 0.0, 1.0), 0), (2, 'shoulder_lift_joint', 0, 8, 7, 1, 0.0, 0.0, -6.28318530718, 6.28318530718, 150.0, 3.15, 'upper_arm_link', (0.0, 1.0, 0.0), (0.0, 0.13585, 0.0), (0.0, -0.7071067811848163, 0.0, 0.7071067811882787), 1), (3, 'elbow_joint', 0, 9, 8, 1, 0.0, 0.0, -3.14159265359, 3.14159265359, 150.0, 3.15, 'forearm_link', (0.0, 1.0, 0.0), (0.0, -0.1197, 0.14499999999999996), (0.0, 0.0, 0.0, 1.0), 2), (4, 'wrist_1_joint', 0, 10, 9, 1, 0.0, 0.0, -6.28318530718, 6.28318530718, 28.0, 3.2, 'wrist_1_link', (0.0, 1.0, 0.0), (0.0, 0.0, 0.14225), (0.0, -0.7071067811848163, 0.0, 0.7071067811882787), 3), (5, 'wrist_2_joint', 0, 11, 10, 1, 0.0, 0.0, -6.28318530718, 6.28318530718, 28.0, 3.2, 'wrist_2_link', (0.0, 0.0, 1.0), (0.0, 0.093, 0.0), (0.0, 0.0, 0.0, 1.0), 4), (6, 'wrist_3_joint', 0, 12, 11, 1, 0.0, 0.0, -6.28318530718, 6.28318530718, 28.0, 3.2, 'wrist_3_link', (0.0, 1.0, 0.0), (0.0, 0.0, 0.09465), (0.0, 0.0, 0.0, 1.0), 5), (7, 'ee_fixed_joint', 4, -1, -1, 0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 'ee_link', (0.0, 0.0, 0.0), (0.0, 0.0823, 0.0), (0.706825181105366, 0.0, 0.0, 0.7073882691671998), 6)), joint_state=((0.0, 0.0, (0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 0.0), (-1.1446004126283698, -0.0003258301956876111, (0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 0.01089444856172156), (-1.1236436943420285, -8.738691868750981e-05, (0.0, 0.0, 0.0, 0.0, 0.0, 0.0), -33.1464272078709), (2.127131245281684, 0.0001649040160241963, (0.0, 0.0, 0.0, 0.0, 0.0, 0.0), -12.202767015090666), (-2.5734669380330564, -0.00019386882546472417, (0.0, 0.0, 0.0, 0.0, 0.0, 0.0), -1.302901037030199), (-1.5705325187505115, -5.840769810394608e-05, (0.0, 0.0, 0.0, 0.0, 0.0, 0.0), -0.047485795537207734), (0.42606691125311075, 0.00018333785422414844, (0.0, 0.0, 0.0, 0.0, 0.0, 0.0), -0.00024232031773351818), (0.0, 0.0, (0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 0.0)), target_effector_pose=Pose3d(rotation=<scipy.spatial.transform._rotation.Rotation object at 0x7f0b784ab3f0>, translation=array([ 0.3 , -0.4 ,  0.06])), goal_translation=None)]
-
-robot_end_effectors: [ObjState(obj_id=3, base_pose=((0.30076074378525747, -0.40110500564859497, 0.05780186159253613), (0.0011386294688875745, 0.9999993082952141, -0.00028494789210420493, -7.574116856236417e-05)), base_vel=((-0.00046588220414291165, -0.0001517309511207036, 5.956232672098272e-06), (0.0006267072671231488, -0.00035382494112520195, 0.003133555185027067)), joint_info=((0, 'tipJoint', 4, -1, -1, 0, 10.0, 0.0, -6.28318530718, 6.28318530718, 150.0, 3.15, 'tipLink', (0.0, 0.0, 0.0), (0.0, 0.0, 0.029), (0.0, 0.0, 0.0, 1.0), -1),), joint_state=((0.0, 0.0, (0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 0.0),))]
-
-targets: [ObjState(obj_id=4, base_pose=((0.515545715918793, 0.19738471220024115, 0.02), (0.0, 0.0, 0.9995577245240199, 0.029738112656381623)), base_vel=((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)), joint_info=(), joint_state=()), ObjState(obj_id=5, base_pose=((0.27642796222779115, 0.20231000392063286, 0.02), (0.0, 0.0, 0.9999891389449757, -0.0046606857957000244)), base_vel=((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)), joint_info=(), joint_state=())]
-
-objects: [ObjState(obj_id=6, base_pose=((-0.250143214970878, -1.015025627604685, 0.01898593514213643), (2.0078257082841014e-06, 3.002891735276099e-05, -0.37234862792174966, 0.9280929362833353)), base_vel=((-0.5712375338666893, -0.18043267598915377, 0.00010244986164296283), (0.0005534838244221237, -0.0008169307859330992, 13.991970272800861)), joint_info=(), joint_state=()), ObjState(obj_id=7, base_pose=((0.38256554189917197, -0.25575052767455014, 0.01898509382544836), (3.948674424398224e-05, 4.188560606201641e-05, 0.8868206021577709, 0.4621138563978811)), base_vel=((1.3370629943951002e-05, 1.4828832783820478e-05, 9.325932797506903e-05), (-0.0006745653269397214, 0.0009891855223804298, -0.00017738288578947203)), joint_info=(), joint_state=())]
-
-@classmethod
-def calc_unnormalized_state(cls, norm_state):
-
-    effector_target_translation = cls._unnormalize(
-        norm_state["effector_target_translation"],
-        EFFECTOR_TARGET_TRANSLATION_MIN,
-        EFFECTOR_TARGET_TRANSLATION_MAX,
-    )
-    # Note: normalized state does not include effector_translation state, this
-    # means this component will be missing (and is marked nan).
-    effector_translation = np.array([np.nan, np.nan], np.float32)
-
-    effector_target_to_block_translation = cls._unnormalize(
-        norm_state["effector_target_to_block_translation"],
-        EFFECTOR_TARGET_TO_BLOCK_TRANSLATION_MIN,
-        EFFECTOR_TARGET_TO_BLOCK_TRANSLATION_MAX,
-    )
-    block_translation = effector_target_to_block_translation + effector_target_translation
-    ori_cos_sin = cls._unnormalize(
-        norm_state["block_orientation_cos_sin"],
-        BLOCK_ORIENTATION_COS_SIN_MIN,
-        BLOCK_ORIENTATION_COS_SIN_MAX,
-    )
-    block_orientation = np.array([math.atan2(ori_cos_sin[1], ori_cos_sin[0])], np.float32)
-
-    effector_target_to_target_translation = cls._unnormalize(
-        norm_state["effector_target_to_target_translation"],
-        EFFECTOR_TARGET_TO_TARGET_TRANSLATION_MIN,
-        EFFECTOR_TARGET_TO_TARGET_TRANSLATION_MAX,
-    )
-    target_translation = effector_target_to_target_translation + effector_target_translation
-    ori_cos_sin = cls._unnormalize(
-        norm_state["target_orientation_cos_sin"],
-        TARGET_ORIENTATION_COS_SIN_MIN,
-        TARGET_ORIENTATION_COS_SIN_MAX,
-    )
-    target_orientation = np.array([math.atan2(ori_cos_sin[1], ori_cos_sin[0])], np.float32)
-
-    return collections.OrderedDict(
-        block_translation=block_translation,
-        block_orientation=block_orientation,
-        effector_translation=effector_translation,
-        effector_target_translation=effector_target_translation,
-        target_translation=target_translation,
-        target_orientation=target_orientation,
-    )
-"""
