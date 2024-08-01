@@ -1,22 +1,25 @@
-from typing import Optional
-import pathlib
-import numpy as np
-import time
-import shutil
 import math
+import pathlib
+import shutil
+import time
 from multiprocessing.managers import SharedMemoryManager
-from diffusion_policy.real_world.rtde_interpolation_controller import RTDEInterpolationController
-from diffusion_policy.real_world.multi_realsense import MultiRealsense, SingleRealsense
-from diffusion_policy.real_world.video_recorder import VideoRecorder
+from typing import Optional
+
+import numpy as np
+
+from diffusion_policy.common.cv2_util import get_image_transform, optimal_row_cols
+from diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.common.timestamp_accumulator import (
-    TimestampObsAccumulator, 
     TimestampActionAccumulator,
-    align_timestamps
+    TimestampObsAccumulator,
+    align_timestamps,
 )
 from diffusion_policy.real_world.multi_camera_visualizer import MultiCameraVisualizer
-from diffusion_policy.common.replay_buffer import ReplayBuffer
-from diffusion_policy.common.cv2_util import (
-    get_image_transform, optimal_row_cols)
+from diffusion_policy.real_world.multi_realsense import MultiRealsense, SingleRealsense
+from diffusion_policy.real_world.rtde_interpolation_controller import (
+    RTDEInterpolationController,
+)
+from diffusion_policy.real_world.video_recorder import VideoRecorder
 
 DEFAULT_OBS_KEY_MAP = {
     # robot
@@ -30,7 +33,7 @@ DEFAULT_OBS_KEY_MAP = {
 }
 
 class RealEnv:
-    def __init__(self, 
+    def __init__(self,
             # required params
             output_dir,
             robot_ip,
@@ -79,7 +82,7 @@ class RealEnv:
 
         color_tf = get_image_transform(
             input_res=video_capture_resolution,
-            output_res=obs_image_resolution, 
+            output_res=obs_image_resolution,
             # obs output rgb
             bgr_to_rgb=True)
         color_transform = color_tf
@@ -89,7 +92,7 @@ class RealEnv:
         def transform(data):
             data['color'] = color_transform(data['color'])
             return data
-        
+
         rw, rh, col, row = optimal_row_cols(
             n_cameras=len(camera_serial_numbers),
             in_wh_ratio=obs_image_resolution[0]/obs_image_resolution[1],
@@ -113,9 +116,9 @@ class RealEnv:
             recording_pix_fmt = 'rgb24'
 
         video_recorder = VideoRecorder.create_h264(
-            fps=recording_fps, 
+            fps=recording_fps,
             codec='h264',
-            input_pix_fmt=recording_pix_fmt, 
+            input_pix_fmt=recording_pix_fmt,
             crf=video_crf,
             thread_type='FRAME',
             thread_count=thread_per_video)
@@ -140,7 +143,7 @@ class RealEnv:
             video_recorder=video_recorder,
             verbose=False
             )
-        
+
         multi_cam_vis = None
         if enable_multi_cam_vis:
             multi_cam_vis = MultiCameraVisualizer(
@@ -196,12 +199,12 @@ class RealEnv:
         self.stage_accumulator = None
 
         self.start_time = None
-    
+
     # ======== start-stop API =============
     @property
     def is_ready(self):
         return self.realsense.is_ready and self.robot.is_ready
-    
+
     def start(self, wait=True):
         self.realsense.start(wait=False)
         self.robot.start(wait=False)
@@ -224,7 +227,7 @@ class RealEnv:
         self.robot.start_wait()
         if self.multi_cam_vis is not None:
             self.multi_cam_vis.start_wait()
-    
+
     def stop_wait(self):
         self.robot.stop_wait()
         self.realsense.stop_wait()
@@ -235,7 +238,7 @@ class RealEnv:
     def __enter__(self):
         self.start()
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.stop()
 
@@ -248,7 +251,7 @@ class RealEnv:
         # 30 Hz, camera_receive_timestamp
         k = math.ceil(self.n_obs_steps * (self.video_capture_fps / self.frequency))
         self.last_realsense_data = self.realsense.get(
-            k=k, 
+            k=k,
             out=self.last_realsense_data)
 
         # 125 hz, robot_receive_timestamp
@@ -288,7 +291,7 @@ class RealEnv:
         for k, v in last_robot_data.items():
             if k in self.obs_key_map:
                 robot_obs_raw[self.obs_key_map[k]] = v
-        
+
         robot_obs = dict()
         for k, v in robot_obs_raw.items():
             robot_obs[k] = v[this_idxs]
@@ -305,10 +308,10 @@ class RealEnv:
         obs_data.update(robot_obs)
         obs_data['timestamp'] = obs_align_timestamps
         return obs_data
-    
-    def exec_actions(self, 
-            actions: np.ndarray, 
-            timestamps: np.ndarray, 
+
+    def exec_actions(self,
+            actions: np.ndarray,
+            timestamps: np.ndarray,
             stages: Optional[np.ndarray]=None):
         assert self.is_ready
         if not isinstance(actions, np.ndarray):
@@ -333,7 +336,7 @@ class RealEnv:
                 pose=new_actions[i],
                 target_time=new_timestamps[i]
             )
-        
+
         # record actions
         if self.action_accumulator is not None:
             self.action_accumulator.put(
@@ -345,7 +348,7 @@ class RealEnv:
                 new_stages,
                 new_timestamps
             )
-    
+
     def get_robot_state(self):
         return self.robot.get_state()
 
@@ -367,7 +370,7 @@ class RealEnv:
         for i in range(n_cameras):
             video_paths.append(
                 str(this_video_dir.joinpath(f'{i}.mp4').absolute()))
-        
+
         # start recording on realsense
         self.realsense.restart_put(start_time=start_time)
         self.realsense.start_recording(video_path=video_paths, start_time=start_time)
@@ -386,11 +389,11 @@ class RealEnv:
             dt=1/self.frequency
         )
         print(f'Episode {episode_id} started!')
-    
+
     def end_episode(self):
         "Stop recording"
         assert self.is_ready
-        
+
         # stop video recorder
         self.realsense.stop_recording()
 
@@ -419,7 +422,7 @@ class RealEnv:
                 self.replay_buffer.add_episode(episode, compressors='disk')
                 episode_id = self.replay_buffer.n_episodes - 1
                 print(f'Episode {episode_id} saved!')
-            
+
             self.obs_accumulator = None
             self.action_accumulator = None
             self.stage_accumulator = None
