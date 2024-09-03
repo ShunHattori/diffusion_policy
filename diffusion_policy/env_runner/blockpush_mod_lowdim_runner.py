@@ -1,6 +1,8 @@
 import collections
 import math
 import pathlib
+import time
+from multiprocessing.managers import SharedMemoryManager
 
 import dill
 import numpy as np
@@ -23,6 +25,9 @@ from diffusion_policy.gym_util.video_recording_wrapper import (
     VideoRecordingWrapper,
 )
 from diffusion_policy.policy.base_lowdim_policy import BaseLowdimPolicy
+from diffusion_policy.real_world.rtde_interpolation_controller import (
+    RTDEInterpolationController,
+)
 
 
 class BlockPushModLowdimRunner(BaseLowdimRunner):
@@ -48,18 +53,16 @@ class BlockPushModLowdimRunner(BaseLowdimRunner):
     ):
         super().__init__(output_dir)
 
-        if n_envs is None:
-            n_envs = n_train + n_test
-
-        task_fps = 10
-        steps_per_render = max(10 // fps, 1)
+        self.task_fps = 3
+        fps = 3
+        steps_per_render = 1
 
         def env_fn():
             return MultiStepWrapper(
                 VideoRecordingWrapper(
                     FlattenObservation(
                         BlockPushMultimodal(
-                            control_frequency=task_fps, shared_memory=False, seed=seed, abs_action=abs_action
+                            control_frequency=self.task_fps, shared_memory=False, seed=seed, abs_action=abs_action
                         )
                     ),
                     video_recoder=VideoRecorder.create_h264(
@@ -73,68 +76,64 @@ class BlockPushModLowdimRunner(BaseLowdimRunner):
                 max_episode_steps=max_steps,
             )
 
-        env_fns = [env_fn] * n_envs
-        env_seeds = list()
-        env_prefixs = list()
-        env_init_fn_dills = list()
-        # train
-        for i in range(n_train):
-            seed = train_start_seed + i
-            enable_render = i < n_train_vis
+        # UR robot setup
+        shm_manager = SharedMemoryManager()
+        shm_manager.start()
+        max_pos_speed = 0.25
+        max_rot_speed = 0.6
+        tcp_offset = 0.13
+        max_obs_buffer_size = 30
+        cube_diag = np.linalg.norm([1, 1, 1])
+        j_init = np.array([0, -90.20, -118.42, -61.38, 90, -4.77]) / 180 * np.pi
 
-            def init_fn(env, seed=seed, enable_render=enable_render):
-                # setup rendering
-                # video_wrapper
-                assert isinstance(env.env, VideoRecordingWrapper)
-                env.env.video_recoder.stop()
-                env.env.file_path = None
-                if enable_render:
-                    filename = pathlib.Path(output_dir).joinpath("media", wv.util.generate_id() + ".mp4")
-                    filename.parent.mkdir(parents=False, exist_ok=True)
-                    filename = str(filename)
-                    env.env.file_path = filename
+        robot = RTDEInterpolationController(
+            shm_manager=shm_manager,
+            robot_ip="172.17.0.2",
+            frequency=125,  # UR5 CB3 RTDE
+            lookahead_time=0.1,
+            gain=300,
+            max_pos_speed=max_pos_speed * cube_diag,
+            max_rot_speed=max_rot_speed * cube_diag,
+            launch_timeout=3,
+            tcp_offset_pose=[0, 0, tcp_offset, 0, 0, 0],
+            payload_mass=None,
+            payload_cog=None,
+            joints_init=j_init,
+            joints_init_speed=1.05,
+            soft_real_time=True,
+            verbose=False,
+            receive_keys=None,
+            get_max_k=max_obs_buffer_size,
+        )
+        self.robot = robot
 
-                # set seed
-                assert isinstance(env, MultiStepWrapper)
-                env.seed(seed)
+        def init_fn(env,seed,enable_render):
+            assert isinstance(env.env, VideoRecordingWrapper)
+            env.env.video_recoder.stop()
+            env.env.file_path = None
+            if enable_render:
+                filename = pathlib.Path(output_dir).joinpath("media", wv.util.generate_id() + ".mp4")
+                filename.parent.mkdir(parents=False, exist_ok=True)
+                filename = str(filename)
+                env.env.file_path = filename
 
-            env_seeds.append(seed)
-            env_prefixs.append("train/")
-            env_init_fn_dills.append(dill.dumps(init_fn))
+            # set seed
+            assert isinstance(env, MultiStepWrapper)
+            env.seed(seed)
 
-        # test
-        for i in range(n_test):
-            seed = test_start_seed + i
-            enable_render = i < n_test_vis
 
-            def init_fn(env, seed=seed, enable_render=enable_render):
-                # setup rendering
-                # video_wrapper
-                assert isinstance(env.env, VideoRecordingWrapper)
-                env.env.video_recoder.stop()
-                env.env.file_path = None
-                if enable_render:
-                    filename = pathlib.Path(output_dir).joinpath("media", wv.util.generate_id() + ".mp4")
-                    filename.parent.mkdir(parents=False, exist_ok=True)
-                    filename = str(filename)
-                    env.env.file_path = filename
+        # Single environment for training
+        seed = train_start_seed
+        enable_render = True
+        self.train_env = env_fn()
+        init_fn(self.train_env, seed=seed, enable_render=enable_render)
 
-                # set seed
-                assert isinstance(env, MultiStepWrapper)
-                env.seed(seed)
+        # Single environment for testing
+        seed = test_start_seed
+        enable_render = True
+        self.test_env = env_fn()
+        init_fn(self.test_env, seed=seed, enable_render=enable_render)
 
-            env_seeds.append(seed)
-            env_prefixs.append("test/")
-            env_init_fn_dills.append(dill.dumps(init_fn))
-
-        env = AsyncVectorEnv(env_fns)
-        # env = SyncVectorEnv(env_fns)
-
-        self.env = env
-        self.env_fns = env_fns
-        self.env_seeds = env_seeds
-        self.env_prefixs = env_prefixs
-        self.env_init_fn_dills = env_init_fn_dills
         self.fps = fps
         self.crf = crf
         self.n_obs_steps = n_obs_steps
@@ -147,142 +146,83 @@ class BlockPushModLowdimRunner(BaseLowdimRunner):
     def run(self, policy: BaseLowdimPolicy):
         device = policy.device
         dtype = policy.dtype
-        env = self.env
 
-        # plan for rollout
-        n_envs = len(self.env_fns)
-        n_inits = len(self.env_init_fn_dills)
-        n_chunks = math.ceil(n_inits / n_envs)
+        # Use train_env or test_env based on the requirement
+        env = self.test_env
 
-        # allocate data
-        all_video_paths = [None] * n_inits
-        all_rewards = [None] * n_inits
-        last_info = [None] * n_inits
+        # initialize
+        obs = env.reset()
+        policy.reset()
+        self.robot.start(wait=True)
+        self.robot.start_wait()  # 起動待ちで初期姿勢がget_stateに反映される
 
-        for chunk_idx in range(n_chunks):
-            start = chunk_idx * n_envs
-            end = min(n_inits, start + n_envs)
-            this_global_slice = slice(start, end)
-            this_n_active_envs = end - start
-            this_local_slice = slice(0, this_n_active_envs)
+        pbar = tqdm.tqdm(
+            total=self.max_steps,
+            desc="Eval BlockPushModLowdimRunner",
+            leave=False,
+            mininterval=self.tqdm_interval_sec,
+        )
+        done = False
+        perv_target_pose = self.robot.get_state()["TargetTCPPose"]
 
-            this_init_fns = self.env_init_fn_dills[this_global_slice]
-            n_diff = n_envs - len(this_init_fns)
-            if n_diff > 0:
-                this_init_fns.extend([self.env_init_fn_dills[0]] * n_diff)
-            assert len(this_init_fns) == n_envs
+        step_duration = 1 / self.task_fps
+        while not done:
+            step_stime = time.time()
 
-            # init envs
-            env.call_each("run_dill_function", args_list=[(x,) for x in this_init_fns])
+            # prepare observations
+            if not self.obs_eef_target:
+                obs[..., 8:10] = 0
+            # print(f"obs: {obs}")
+            np_obs_dict = {"obs": obs.astype(np.float32)}
+            obs_dict = dict_apply(np_obs_dict, lambda x: torch.from_numpy(x).to(device=device))
+            obs_dict = dict_apply(obs_dict, lambda x: x.unsqueeze(0))
 
-            # start rollout
-            obs = env.reset()
-            past_action = None
-            policy.reset()
+            # predict actions
+            with torch.no_grad():
+                stime = time.time()
+                action_dict = policy.predict_action(obs_dict)
+            print(f"Prediction time: {time.time() - stime}")
+            np_action_dict = dict_apply(action_dict, lambda x: x.cpu().numpy())
+            action = np_action_dict["action"]
 
-            pbar = tqdm.tqdm(
-                total=self.max_steps,
-                desc=f"Eval BlockPushModLowdimRunner {chunk_idx+1}/{n_chunks}",
-                leave=False,
-                mininterval=self.tqdm_interval_sec,
-            )
-            done = False
-            while not done:
-                # create obs dict
-                if not self.obs_eef_target:
-                    obs[..., 8:10] = 0
-                np_obs_dict = {"obs": obs.astype(np.float32)}
-                if self.past_action and (past_action is not None):
-                    # TODO: not tested
-                    np_obs_dict["past_action"] = past_action[:, -(self.n_obs_steps - 1) :].astype(np.float32)
-                # device transfer
-                obs_dict = dict_apply(np_obs_dict, lambda x: torch.from_numpy(x).to(device=device))
+            # step environment
+            action = action.squeeze(0)
+            # print(f"action: {action}")
+            # print(f"self.robot.get_state(): {self.robot.get_state()}")
 
-                # run policy
-                with torch.no_grad():
-                    action_dict = policy.predict_action(obs_dict)
+            assert len(action) == 1
+            this_target_pose = perv_target_pose.copy()
+            this_target_pose[[0, 1]] += action[-1]
+            perv_target_pose = this_target_pose
+            this_target_poses = np.expand_dims(this_target_pose, axis=0)
+            this_target_poses[:, :2] = np.clip(this_target_poses[:, :2], [0.25, -0.45], [0.77, 0.40])
 
-                # device_transfer
-                np_action_dict = dict_apply(action_dict, lambda x: x.detach().to("cpu").numpy())
+            obs, reward, done, info = env.step(action)
+            done = np.all(done)
 
-                action = np_action_dict["action"]
+            # set waypoint for robot
+            this_target_poses = this_target_poses.squeeze(0)
+            # print(f"this_target_poses: {this_target_poses}")
+            self.robot.schedule_waypoint(pose=this_target_poses, target_time=time.time() + step_duration)
+            # self.robot.servoL(pose=this_target_poses)
 
-                # step env
-                obs, reward, done, info = env.step(action)  # 　ここ！
+            elapsed_time = time.time() - step_stime
+            sleep_duration = step_duration - elapsed_time
+            if sleep_duration > 0:
+                time.sleep(sleep_duration)
 
-                done = np.all(done)
-                past_action = action
+            pbar.update(1)
+        pbar.close()
 
-                # update pbar
-                pbar.update(action.shape[1])
-            pbar.close()
+        # stop robot
+        self.robot.stop(wait=True)
 
-            # collect data for this round
-            all_video_paths[this_global_slice] = env.render()[this_local_slice]
-            all_rewards[this_global_slice] = env.call("get_attr", "reward")[this_local_slice]
-            last_info[this_global_slice] = [dict((k, v[-1]) for k, v in x.items()) for x in info][this_local_slice]
-
-        # log
-        total_rewards = collections.defaultdict(list)
-        total_p1 = collections.defaultdict(list)
-        total_p2 = collections.defaultdict(list)
-        prefix_event_counts = collections.defaultdict(lambda: collections.defaultdict(lambda: 0))
-        prefix_counts = collections.defaultdict(lambda: 0)
-
-        log_data = dict()
-        # results reported in the paper are generated using the commented out line below
-        # which will only report and average metrics from first n_envs initial condition and seeds
-        # fortunately this won't invalidate our conclusion since
-        # 1. This bug only affects the variance of metrics, not their mean
-        # 2. All baseline methods are evaluated using the same code
-        # to completely reproduce reported numbers, uncomment this line:
-        # for i in range(len(self.env_fns)):
-        # and comment out this line
-        for i in range(n_inits):
-            seed = self.env_seeds[i]
-            prefix = self.env_prefixs[i]
-            this_rewards = all_rewards[i]
-            total_reward = np.unique(this_rewards).sum()  # (0, 0.49, 0.51)
-            p1 = total_reward > 0.4
-            p2 = total_reward > 0.9
-
-            total_rewards[prefix].append(total_reward)
-            total_p1[prefix].append(p1)
-            total_p2[prefix].append(p2)
-            log_data[prefix + f"sim_max_reward_{seed}"] = total_reward
-
-            # aggregate event counts
-            prefix_counts[prefix] += 1
-            for key, value in last_info[i].items():
-                delta_count = 1 if value > 0 else 0
-                prefix_event_counts[prefix][key] += delta_count
-
-            # visualize sim
-            video_path = all_video_paths[i]
-            if video_path is not None:
-                sim_video = wandb.Video(video_path)
-                log_data[prefix + f"sim_video_{seed}"] = sim_video
-
-        # log aggregate metrics
-        for prefix, value in total_rewards.items():
-            name = prefix + "mean_score"
-            value = np.mean(value)
-            log_data[name] = value
-        for prefix, value in total_p1.items():
-            name = prefix + "p1"
-            value = np.mean(value)
-            log_data[name] = value
-        for prefix, value in total_p2.items():
-            name = prefix + "p2"
-            value = np.mean(value)
-            log_data[name] = value
-
-        # summarize probabilities
-        for prefix, events in prefix_event_counts.items():
-            prefix_count = prefix_counts[prefix]
-            for event, count in events.items():
-                prob = count / prefix_count
-                key = prefix + event
-                log_data[key] = prob
+        # gather results and log
+        video_path = env.render()
+        total_reward = 1 #np.sum(env.call("get_attr", "reward"))
+        log_data = {
+            "video": wandb.Video(video_path) if video_path else None,
+            "total_reward": total_reward,
+        }
 
         return log_data
