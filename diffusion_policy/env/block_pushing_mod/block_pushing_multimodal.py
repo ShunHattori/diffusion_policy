@@ -505,6 +505,8 @@ class BlockPushMultimodal(block_pushing.BlockPush):
     def _create_observation_space(self, image_size):
         pi2 = math.pi * 2
 
+        # ここで，各観測に関する空間を定義している．flattenを見越してorderedDictにしているが，
+        # キーとspaceの対応がconfigの都合でほしいからspaces Dictにする必要があるっぽい．
         obs_dict = collections.OrderedDict(
             block_translation=spaces.Box(low=-5, high=5, shape=(2,)),  # x,y
             block_orientation=spaces.Box(low=-pi2, high=pi2, shape=(1,)),  # phi
@@ -732,6 +734,8 @@ registration.register(
     kwargs=dict(shared_memory=True),
     max_episode_steps=350,
 )
+
+# この環境を利用する
 registration.register(
     id="BlockPushMultimodalRgb-v0",
     entry_point=BlockPushMultimodal,
