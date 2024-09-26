@@ -163,9 +163,9 @@ def main(input, output, robot_ip, match_dataset, match_episode, vis_camera_idx, 
 
             # Should be the same as demo
             # realsense exposure
-            env.realsense.set_exposure(exposure=120, gain=0)
+            env.realsense.set_exposure(exposure=166, gain=64)
             # realsense white balance
-            env.realsense.set_white_balance(white_balance=5900)
+            env.realsense.set_white_balance(white_balance=4600)
 
             print("Waiting for realsense")
             time.sleep(1.0)
@@ -287,6 +287,7 @@ def main(input, output, robot_ip, match_dataset, match_episode, vis_camera_idx, 
                             # this action starts from the first obs step
                             action = result["action"][0].detach().to("cpu").numpy()
                             print("Inference latency:", time.time() - s)
+                            print(f"action {action}")
 
                         # convert policy action to env actions
                         if delta_action:
@@ -301,6 +302,7 @@ def main(input, output, robot_ip, match_dataset, match_episode, vis_camera_idx, 
                             this_target_poses = np.zeros((len(action), len(target_pose)), dtype=np.float64)
                             this_target_poses[:] = target_pose
                             this_target_poses[:, [0, 1]] = action
+                            print("updated target poses")
 
                         # deal with timing
                         # the same step actions are always the target for
@@ -321,7 +323,7 @@ def main(input, output, robot_ip, match_dataset, match_episode, vis_camera_idx, 
                             action_timestamps = action_timestamps[is_new]
 
                         # clip actions ここは手元の環境に一致させる
-                        this_target_poses[:, :2] = np.clip(target_pose[:2], [-0.6, -0.90], [0.6, 0.55])
+                        this_target_poses[:, :2] = np.clip(this_target_poses[:, :2], [-0.6, -0.90], [0.6, 0.55])
 
                         # execute actions
                         env.exec_actions(actions=this_target_poses, timestamps=action_timestamps)
@@ -343,7 +345,7 @@ def main(input, output, robot_ip, match_dataset, match_episode, vis_camera_idx, 
                             print("Stopped.")
                             break
 
-                        # auto termination
+                        # auto termination　教示データに停止位置まで含んだほうが良かったのか・・・？
                         terminate = False
                         if time.monotonic() - t_start > max_duration:
                             terminate = True

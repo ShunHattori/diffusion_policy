@@ -148,7 +148,7 @@ class RealEnv:
         robot = RTDEInterpolationController(
             shm_manager=shm_manager,
             robot_ip=robot_ip,
-            frequency=125,  # UR5 CB3 RTDE
+            frequency=500,  # UR5 CB3 RTDE
             lookahead_time=0.1,
             gain=300,
             max_pos_speed=max_pos_speed * cube_diag,
@@ -318,6 +318,9 @@ class RealEnv:
             self.action_accumulator.put(new_actions, new_timestamps)
         if self.stage_accumulator is not None:
             self.stage_accumulator.put(new_stages, new_timestamps)
+
+    def exec_servoL(self, pose, duration=2.0):
+        self.robot.servoL(pose=pose, duration=duration)
 
     def get_robot_state(self):
         return self.robot.get_state()

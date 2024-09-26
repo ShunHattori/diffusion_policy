@@ -31,6 +31,9 @@ def test_joystick():
                     print(f"Motion State: {motion_state}")
                     print(f"Button State: {button_state}")
 
+                    state = joystick_process.is_button_pressed(7)
+                    print(f"{state=}")
+
                     # 少し待機
                     time.sleep(0.1)
 

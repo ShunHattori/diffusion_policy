@@ -84,6 +84,7 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
             iter_idx = 0
             stop = False
             is_recording = False
+            button_lock = False
             while not stop:
                 # calculate timing
                 t_cycle_end = t_start + (iter_idx + 1) * dt
@@ -118,6 +119,33 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
                             key_counter.clear()
                             is_recording = False
                         # delete
+
+                # implement same process with keystokes but joysticks
+                if not button_lock:
+                    if sm.is_button_pressed(2):  # (3) start recording
+                        button_lock = True
+                        env.start_episode(t_start + (iter_idx + 2) * dt - time.monotonic() + time.time())
+                        is_recording = True
+                        print("Recording!")
+                    elif sm.is_button_pressed(3):  # (4) end recording
+                        button_lock = True
+                        env.end_episode()
+                        is_recording = False
+                        print("Stopped.")
+                    elif sm.is_button_pressed(4):  # (5) move to origin
+                        button_lock = True
+                        print("Moving to origin.")
+                    elif sm.is_button_pressed(6):  # (7) delete previously episode
+                        button_lock = True
+                        if click.confirm("Are you sure to drop an episode?"):
+                            env.drop_episode()
+                            key_counter.clear()
+                            is_recording = False
+                    elif sm.is_button_pressed(7):  # (8) End Program
+                        stop = True
+                elif not sm.is_button_pressed(2) and not sm.is_button_pressed(3) and not sm.is_button_pressed(4) and not sm.is_button_pressed(6) and not sm.is_button_pressed(7):
+                    button_lock = False
+
                 stage = key_counter[Key.space]
 
                 # visualize
@@ -152,7 +180,8 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
                 target_pose[3:] = (drot * st.Rotation.from_rotvec(target_pose[3:])).as_rotvec()
 
                 # execute teleop command
-                env.exec_actions(actions=[target_pose], timestamps=[t_command_target - time.monotonic() + time.time()], stages=[stage])
+                if not button_lock:
+                    env.exec_actions(actions=[target_pose], timestamps=[t_command_target - time.monotonic() + time.time()], stages=[stage])
                 precise_wait(t_cycle_end)
                 iter_idx += 1
 
