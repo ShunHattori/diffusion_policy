@@ -41,14 +41,14 @@ def test():
         with SingleRealsense(
             shm_manager=shm_manager,
             serial_number=serial,
-            resolution=(1280, 720),
+            # resolution=(1280, 720),
             # resolution=(960,540),
-            # resolution=(640,480),
+            resolution=(640, 480),
             capture_fps=30,
             enable_color=True,
             # enable_depth=True,
             # enable_infrared=True,
-            advanced_mode_config=config,
+            advanced_mode_config=None,
             # transform=transform,
             # recording_transform=transform
             # verbose=True
@@ -58,7 +58,7 @@ def test():
             intr = realsense.get_intrinsics()
             print(intr)
 
-            video_path = "data_local/test.mp4"
+            video_path = "./test.mp4"
             rec_start_time = time.time() + 2
             realsense.start_recording(video_path, start_time=rec_start_time)
 
