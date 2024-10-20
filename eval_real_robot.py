@@ -224,6 +224,10 @@ def main(input, output, robot_ip, match_dataset, match_episode, vis_camera_idx, 
                         # Exit human control loop
                         # hand control over to the policy
                         break
+                    elif key_stroke == ord("d"):
+                        # Delete the most recent recorded episode
+                        if click.confirm("Are you sure to drop an episode?"):
+                            env.drop_episode()
 
                     precise_wait(t_sample)
                     # get teleop command
