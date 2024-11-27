@@ -135,6 +135,8 @@ def main(input, output, robot_ip, match_dataset, match_episode, vis_camera_idx, 
 
     # setup experiment
     dt = 1 / frequency
+    err_sum = 0.0
+    err_last = 0.0
 
     obs_res = get_real_obs_resolution(cfg.task.shape_meta)
     n_obs_steps = cfg.n_obs_steps
@@ -236,14 +238,36 @@ def main(input, output, robot_ip, match_dataset, match_episode, vis_camera_idx, 
                     dpos = sm_state[:3] * (env.max_pos_speed / frequency)
                     drot_xyz = sm_state[3:] * (env.max_rot_speed / frequency)
 
-                    if not sm.is_button_pressed(0):
-                        # translation mode
-                        drot_xyz[:] = 0
+                    drot_xyz[:] = 0
+                    dpos[2] = 0
+
+                    # RealEnv joint init angles j_init = np.array([-112.34, -124.52, -105.01, -40.47, 90.16, -22.36]) / 180 * np.pi
+                    # same pose in action space
+                    j_init_in_pose = np.array([-3.50332195e-01, -4.99965374e-01, -1.49386770e-02, 0.0, -3.14151818e00, 0.0])
+
+                    if sm.is_button_pressed(0):
+                        # origin mode
+                        kp = 0.15
+                        ki = 0.00
+                        kd = -0.01
+                        err = j_init_in_pose - env.get_robot_state()["ActualTCPPose"]
+                        print(f"Moving to origin. TCP: {env.get_robot_state()['ActualTCPPose']}")
+                        err_sum += err * dt
+                        err_diff = (err - err_last) / dt
+                        dpos = kp * err + ki * err_sum + kd * err_diff
+                        dpos = dpos[:3]
+                        err_last = err
                     else:
-                        dpos[:] = 0
-                    if not sm.is_button_pressed(1):
-                        # 2D translation mode
-                        dpos[2] = 0
+                        err_sum = 0.0
+
+                    # if not sm.is_button_pressed(0):
+                    #     # translation mode
+                    #     drot_xyz[:] = 0
+                    # else:
+                    #     dpos[:] = 0
+                    # if not sm.is_button_pressed(1):
+                    #     # 2D translation mode
+                    #     dpos[2] = 0
 
                     drot = st.Rotation.from_euler("xyz", drot_xyz)
                     target_pose[:3] += dpos

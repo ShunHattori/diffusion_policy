@@ -132,9 +132,6 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
                         env.end_episode()
                         is_recording = False
                         print("Stopped.")
-                    elif sm.is_button_pressed(4):  # (5) move to origin
-                        button_lock = True
-                        print("Moving to origin.")
                     elif sm.is_button_pressed(6):  # (7) delete previously episode
                         button_lock = True
                         if click.confirm("Are you sure to drop an episode?"):
@@ -166,14 +163,25 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
                 dpos = sm_state[:3] * (env.max_pos_speed / frequency)
                 drot_xyz = sm_state[3:] * (env.max_rot_speed / frequency)
 
-                if not sm.is_button_pressed(0):
-                    # translation mode
-                    drot_xyz[:] = 0
-                else:
-                    dpos[:] = 0
-                if not sm.is_button_pressed(1):
-                    # 2D translation mode
-                    dpos[2] = 0
+                drot_xyz[:] = 0
+                dpos[2] = 0
+
+                # if not sm.is_button_pressed(0):
+                #     # translation mode
+                #     drot_xyz[:] = 0
+                # else:
+                #     dpos[:] = 0
+                # if not sm.is_button_pressed(1):
+                #     # 2D translation mode
+                #     dpos[2] = 0
+
+                if sm.is_button_pressed(4):  # (5) move to origin
+                    j_init_in_pose = np.array([-3.50332195e-01, -4.99965374e-01, -1.49386770e-02, 0.0, -3.14151818e00, 0.0])
+                    kp = 0.20
+                    err = j_init_in_pose - env.get_robot_state()["ActualTCPPose"]
+                    print(f"Moving to origin. TCP: {env.get_robot_state()['ActualTCPPose']}")
+                    dpos = kp * err
+                    dpos = dpos[:3]
 
                 drot = st.Rotation.from_euler("xyz", drot_xyz)
                 target_pose[:3] += dpos

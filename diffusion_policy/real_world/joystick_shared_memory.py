@@ -112,7 +112,7 @@ class JoyStick(mp.Process):
         pygame.joystick.init()
         if pygame.joystick.get_count() == 0:
             raise RuntimeError("No Joy-Stick connected!")
-        joystick = pygame.joystick.Joystick(1)  # ASROCKのLEDコントローラが0番目に認識されていたため1番目を選択
+        joystick = pygame.joystick.Joystick(0)  # ASROCKのLEDコントローラが0番目に認識されていたため1番目を選択
         joystick.init()
         print(f"Start listening to Joy-Stick: {joystick.get_name()}")
 

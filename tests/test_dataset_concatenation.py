@@ -9,8 +9,8 @@ os.chdir(ROOT_DIR)
 
 
 def concatenate():
-    replay_buffer1 = ReplayBuffer.create_from_path("/home/shun-hat/diffusion_policy/data/blockpushing_real/non_expert_1/replay_buffer.zarr", "r")
-    replay_buffer2 = ReplayBuffer.create_from_path("/home/shun-hat/diffusion_policy/data/blockpushing_real/bc2/replay_buffer.zarr", "r")
+    replay_buffer1 = ReplayBuffer.create_from_path("/home/shun-hat/diffusion_policy/data/blockpushing_real/pure1/replay_buffer.zarr", "r")
+    replay_buffer2 = ReplayBuffer.create_from_path("/home/shun-hat/diffusion_policy/data/blockpushing_real/augmented_and_combined/replay_buffer.zarr", "r")
     combined_replay_buffer = ReplayBuffer.create_empty_zarr()
 
     for i in range(replay_buffer1.n_episodes):
@@ -18,11 +18,11 @@ def concatenate():
     for i in range(replay_buffer2.n_episodes):
         combined_replay_buffer.add_episode(replay_buffer2.get_episode(i))
 
-    combined_replay_buffer.save_to_path("/home/shun-hat/diffusion_policy/data/blockpushing_real/combined/replay_buffer.zarr")
+    combined_replay_buffer.save_to_path("/home/shun-hat/diffusion_policy/data/blockpushing_real/all_data/replay_buffer.zarr")
 
-    video_dir1 = "/home/shun-hat/diffusion_policy/data/blockpushing_real/non_expert_1/videos"
-    video_dir2 = "/home/shun-hat/diffusion_policy/data/blockpushing_real/bc2/videos"
-    combined_dir = "/home/shun-hat/diffusion_policy/data/blockpushing_real/combined/videos"
+    video_dir1 = "/home/shun-hat/diffusion_policy/data/blockpushing_real/pure1/videos"
+    video_dir2 = "/home/shun-hat/diffusion_policy/data/blockpushing_real/augmented_and_combined/videos"
+    combined_dir = "/home/shun-hat/diffusion_policy/data/blockpushing_real/all_data/videos"
 
     os.makedirs(combined_dir, exist_ok=True)
     files1 = os.listdir(video_dir1)
